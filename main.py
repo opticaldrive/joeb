@@ -34,23 +34,33 @@ async def get_hackatime_user_trust_factor(session, username):
 
 async def scan_hackatime_user(session, username):
     user_trust = await get_hackatime_user_trust_factor(session, username)
+
     trust_level = user_trust.get("trust_level", "?")
+    trust_value = user_trust.get("trust_value", "?")
     line = f"{username},{trust_level}\n"
-    print(username, trust_level)
-    return {"username": username, "trust_level": trust_level}
+    print(username, trust_value, trust_level)
+
+    
+    return {"username": username, "trust value":  user_trust.get("trust_value", "?")}#, "trust_level": trust_level}
+
 
 
 async def main():
 
-    # stupid csv stuff
-
     async with aiohttp.ClientSession() as session:
         tasks = []
-        max_user = 30000
-        for number in range(1, max_user):
-            tasks.append(asyncio.ensure_future(scan_hackatime_user(session, number)))
-
+        max_user = 300
+        for user in range(max_user):
+            tasks.append(asyncio.ensure_future(scan_hackatime_user(session, user)))
         users_data = await asyncio.gather(*tasks)
+        print(len(users_data))
+
+        # should we implement batches. each batch end update files. 
+        # for batch in range(int(max_user/batch_size) + 1):
+        #     for number in range(batch_size):
+        #         tasks.append(asyncio.ensure_future(scan_hackatime_user(session, number)))
+        #     users_data = await asyncio.gather(*tasks)
+
 
 
 asyncio.run(main())
