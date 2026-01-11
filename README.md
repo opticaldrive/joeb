@@ -1,8 +1,12 @@
 # joeb
 
 
-joeb
+joeb \
 
-joe is on the job
+joe is on the job \
 
-undoing ai annoying code
+jobless me wants to see what joe does\ 
+
+
+
+undoing ai annoying code(i hate you kindly ampcode for messing up stuff)
