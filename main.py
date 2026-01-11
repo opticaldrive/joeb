@@ -44,7 +44,7 @@ async def scan_hackatime_user(session, username):
     print(username, trust_value, trust_level)
     return {
         "username": username,
-        "trust_value": user_trust.get("trust_value", "?"),
+        "trust_value": str(user_trust.get("trust_value", "?")),
     }  # , "trust_level": trust_level}
 
 
@@ -66,7 +66,7 @@ def get_trust_changes(new_csv_path, old_csv_path):
     changed = [
         # new_csv_dict[user]
         {
-            "username": int(user),
+            "username": user,
             "old_trust": old_csv_dict[user]["trust_value"],
             "new_trust": new_csv_dict[user]["trust_value"],
         }
@@ -78,7 +78,7 @@ def get_trust_changes(new_csv_path, old_csv_path):
     return changed
 
 
-trust_human = {0: "blue", 1: "red", 2: "green", "?": "Not Found/Unknown"}
+trust_human = {"0": "blue", "1": "red", "2": "green", "?": "Not Found/Unknown"}
 
 
 def make_change_message(old_trust, new_trust):
