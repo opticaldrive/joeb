@@ -16,6 +16,7 @@ import time
 import csv
 import os
 import shutil
+import random
 
 start_time = time.time()
 
@@ -163,9 +164,14 @@ async def main():
             for changed_user in changed:
                 username = changed_user["username"]
                 user_info = await get_hackatime_user(session, username)
-                print(user_info)
+                # print(user_info)
                 error = user_info.get("error")
                 if error is None:
+                    change_message = random.choice(
+                        make_change_message(
+                            changed_user["old_trust"], changed_user["new_trust"]
+                        ),
+                    )
                     print(
                         # (
                         #     user_info.get("trust_factor", {}).get("trust_value", "?")
@@ -175,9 +181,7 @@ async def main():
                         f"{changed_user['old_trust']} -> {changed_user['new_trust']}",
                         user_info["data"]["username"],
                         user_info["data"]["user_id"],
-                        make_change_message(
-                            changed_user["old_trust"], changed_user["new_trust"]
-                        ),
+                        change_message,
                         # "HRT: ", # yes
                         # user_info["data"]["human_readable_total"],
                         # "HRDA: ",
