@@ -21,7 +21,7 @@ jobs:
 
       - name: Scanny scanner
         env:
-          SLACKBOT_TOKEN:${{ secrets.SLACKBOT_TOKEN }}
+          SLACKBOT_TOKEN: ${{ secrets.SLACKBOT_TOKEN }}
           LOG_CHANNEL: ${{ secrets.LOG_CHANNEL }}
         run: python main.py
 
