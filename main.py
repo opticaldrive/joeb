@@ -1,11 +1,7 @@
 """
-TODO: fix stupid csvs
+TODO: proper error handling for hackatime api requests. timeouts, retries, blablaba
 
-also actually get hackatime logging sob
-
-also actually get it to be sane and not like weird csv annoying rubbish
-
-also figure out max users
+also figure out max users instead of just trying to hit 30k
 
 mindblown 30k requests in 80 seconds = 375 requests a second
 """
@@ -89,11 +85,6 @@ async def main():
                     print("User disabled public stats")
                 else:
                     print(error)
-        # should we implement batches. each batch end update files.
-        # for batch in range(int(max_user/batch_size) + 1):
-        #     for number in range(batch_size):
-        #         tasks.append(asyncio.ensure_future(scan_hackatime_user(session, number)))
-        #     users_data = await asyncio.gather(*tasks)
 
 
 asyncio.run(main())
