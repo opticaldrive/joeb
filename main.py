@@ -148,16 +148,27 @@ def make_change_message(old_trust, new_trust):
     return trust_changes[old_trust][new_trust]
 
 async def main():
+    semaphore = asyncio.Semaphore(5)  # only 5
+    
+  
+    async def rate_limited_scan(session, username):
+        async with semaphore:
+            return await scan_hackatime_user(session, username)
+
 
     async with aiohttp.ClientSession() as session:
-        tasks = []
         # dynamically calculate max user if 100 not found users are in a row
-        # semaphore = asyncio.Semaphore
-        max_user = 300
+        max_user = 20
         
-        for user_info in range(max_user):
-            tasks.append(asyncio.ensure_future(scan_hackatime_user(session, user_info)))
-        users_data = await asyncio.gather(*tasks)
+        users_data = []
+
+        batch_size = 5
+        for i in range(0, max_user, batch_size):
+            batch_end = min(i + batch_size, max_user)
+            tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
+            batch_results = await asyncio.gather(*tasks)
+            users_data.extend(batch_results) # do analytics here too, process batch? idk
+            await asyncio.sleep(0.5)  # bweeep
         print(len(users_data))
 
         # silly path
