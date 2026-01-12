@@ -62,7 +62,7 @@ def make_change_message(old_trust, new_trust):
                 None
                 # "[nochange] already banned, why am I talking about this? ts nothing changed. fraudster's meta posts don't do anything"
             ],
-            "2": ["simply what, from banned to banner.", "promotion! or what lol"],
+            "2": ["simply what, from banned to banner.", "?? go ban people now? promotion! or what lol"],
         },
         "2": {
             "?": ["someone nuked someone - amongus?"],
