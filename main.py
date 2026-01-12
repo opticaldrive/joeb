@@ -164,7 +164,7 @@ async def main():
 
         batch_size = 5
         for i in range(0, max_user, batch_size):
-            batch_end = min(i + batch_size, max_user)
+            batch_end = min(i + batch_size, max_user) # yea a bit silly but works
             tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
             batch_results = await asyncio.gather(*tasks)
             users_data.extend(batch_results) # do analytics here too, process batch? idk
@@ -195,9 +195,9 @@ async def main():
                 user_info = await get_hackatime_user(session, username)
                 # print(user_info)
                 error = user_info.get("error")
+                old_trust = changed_user["old_trust"]
+                new_trust = changed_user["new_trust"]
                 if error is None:
-                    old_trust = changed_user["old_trust"]
-                    new_trust = changed_user["new_trust"]
                     
                     change_message = random.choice(
                         make_change_message(
@@ -228,11 +228,17 @@ async def main():
                     # text=message,
                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
 
+                elif  "user has disabled public stats" in error:
+                    # print("User disabled public stats")
+                    print(f"{old_trust} -> {new_trust}", "DPS", "UID:", username)
+                    message = f"""
+                    `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n
+                    *{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n
+                    > __{change_message}__
+                    """
+                    # text=message,
+                    slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
 
-
-
-                elif error == "user has disabled public stats":
-                    print("User disabled public stats")
                 else:
                     print(error)
 
