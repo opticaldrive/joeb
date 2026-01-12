@@ -1,6 +1,11 @@
 name: Scan Hackatime Users
 run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
-on: [push]
+# on: [push]
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
+  workflow_dispatch:  # Allows manual trigger
+
 jobs:
   scan-hackatime:
     runs-on: ubuntu-latest
@@ -10,10 +15,21 @@ jobs:
       - name: install python snakey
         uses: actions/setup-python@v5
         with:
-          python-verion: '3.11'
-        
+          python-version: '3.11'
+      - name: pip install
+        run: pip install -r requirements.txt
 
-      - name: List files in the repository
+      - name: Scanny scanner
+        env:
+          SLACKBOT_TOKEN:${{ secrets.SLACKBOT_TOKEN }}
+          LOG_CHANNEL: ${{ secrets.LOG_CHANNEL }}
+        run: python main.py
+
+      - name: save logs ig
+      # idk what this is pray it works
         run: |
-          ls ${{ github.workspace }}
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/*.csv
+          git diff --staged --quiet || git commit -m "Update hackatime user data"
+          git push
