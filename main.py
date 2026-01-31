@@ -13,6 +13,12 @@ import csv
 import os
 import shutil
 import random
+
+import ssl
+import certifi
+
+SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+
 # from hackatime_api import (
 #     scan_hackatime_user,
 #     get_hackatime_user,
@@ -148,7 +154,7 @@ def make_change_message(old_trust, new_trust):
     return trust_changes[old_trust][new_trust]
 
 async def main():
-    semaphore = asyncio.Semaphore(5)  # only 5
+    semaphore = asyncio.Semaphore(1000)  # only 5
     
   
     async def rate_limited_scan(session, username):
@@ -158,38 +164,64 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         # dynamically calculate max user if 100 not found users are in a row
-        max_user = 20
+        max_user = 25000
         
         users_data = []
 
-        batch_size = 5
+        data_dir = Path(__file__).parent / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        
+        csv_path = data_dir / "userslist.csv"
+        old_csv_path = data_dir / "old_userslist.csv"  # + csv_path
+
+        if os.path.exists(csv_path):
+            shutil.copy(csv_path, old_csv_path)
+            not_first_run = True
+            open(csv_path, "w").close() # nuke the old file, its now in cache file
+        old_csv_file = open(old_csv_path, "r")
+        old_csv = list(csv.DictReader(old_csv_file))
+        old_csv_dict = {user["username"]: user for user in old_csv}
+
+
+        # batch_csv_path = data_dir / "batch_userslist.csv"
+        # batch_old_csv_path = data_dir / "batch_old_userslist.csv"  # + csv_path 
+
+        not_first_run = False
+
+   
+        batch_size = 10000
+
+
         for i in range(0, max_user, batch_size):
             batch_end = min(i + batch_size, max_user) # yea a bit silly but works
             tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
             batch_results = await asyncio.gather(*tasks)
+
             users_data.extend(batch_results) # do analytics here too, process batch? idk
-            await asyncio.sleep(0.5)  # bweeep
-        print(len(users_data))
 
-        # silly path
-        data_dir = Path(__file__).parent / "data"
-        data_dir.mkdir(exist_ok=True)
+            csv_exists = os.path.exists(csv_path)
 
-        csv_path = data_dir / "userslist.csv"
-        old_csv_path = data_dir / "old_userslist.csv"  # + csv_path
-        not_first_run = False
-        if os.path.exists(csv_path):
-            shutil.copy(csv_path, old_csv_path)
-            not_first_run = True
-        with open(csv_path, "w", newline="") as list_file:
-            writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
-            writer.writeheader()
-            writer.writerows(users_data)
+            # save overall list
 
-        if not_first_run:
-            print("Not first run, scanning users")
-            changed = get_trust_changes(csv_path, old_csv_path)
-            print(len(changed))
+            with open(csv_path, "a", newline="") as list_file:
+                writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
+                if not csv_exists:
+                    writer.writeheader()
+                writer.writerows(batch_results)
+
+            users_dict = {user["username"]: user for user in batch_results}
+
+            changed = [
+                {
+                    "username": user,
+                    "old_trust": old_csv_dict[user]["trust_value"],
+                    "new_trust": users_dict[user]["trust_value"],
+                }
+                for user in users_dict
+                if user in old_csv_dict and users_dict[user] != old_csv_dict[user]
+            ]
+            print("Changed:", len(changed))
             for changed_user in changed:
                 username = changed_user["username"]
                 user_info = await get_hackatime_user(session, username)
@@ -221,9 +253,7 @@ async def main():
                     )
 
                     message = f"""
-                    `{user_info["data"]["username"]}`(`{username}`) had a trust level change! \n
-                    *{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n
-                    > __{change_message}__
+                    `{user_info["data"]["username"]}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
                     """
                     # text=message,
                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
@@ -231,16 +261,83 @@ async def main():
                 elif  "user has disabled public stats" in error:
                     # print("User disabled public stats")
                     print(f"{old_trust} -> {new_trust}", "DPS", "UID:", username)
+            
                     message = f"""
-                    `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n
-                    *{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n
-                    > __{change_message}__
+                    `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
                     """
                     # text=message,
                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
 
                 else:
                     print(error)
+
+
+
+
+            # await asyncio.sleep(0.5)  # bweeep
+        # print(len(users_data))
+
+        # silly path
+    
+
+
+
+#         with open(csv_path, "w", newline="") as list_file:
+#             writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
+#             writer.writeheader()
+#             writer.writerows(users_data)
+
+#         if not_first_run:
+#             print("Not first run, scanning users")
+#             changed = get_trust_changes(csv_path, old_csv_path)
+#             print(len(changed))
+#             for changed_user in changed:
+#                 username = changed_user["username"]
+#                 user_info = await get_hackatime_user(session, username)
+#                 # print(user_info)
+#                 error = user_info.get("error")
+#                 old_trust = changed_user["old_trust"]
+#                 new_trust = changed_user["new_trust"]
+#                 if error is None:
+                    
+#                     change_message = random.choice(
+#                         make_change_message(
+#                             old_trust, new_trust
+#                         ),
+#                     )
+#                     print(
+#                         # (
+#                         #     user_info.get("trust_factor", {}).get("trust_value", "?")
+#                         #     if user_info.get("trust_factor")
+#                         #     else "?"
+#                         # ),
+#                         f"{old_trust} -> {new_trust}",
+#                         user_info["data"]["username"],
+#                         user_info["data"]["user_id"],
+#                         change_message,
+#                         # "HRT: ", # yes
+#                         # user_info["data"]["human_readable_total"],
+#                         # "HRDA: ",
+#                         # user_info["data"]["human_readable_daily_average"],
+#                     )
+
+#                     message = f"""
+#                     `{user_info["data"]["username"]}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
+#                     """
+#                     # text=message,
+#                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
+
+#                 elif  "user has disabled public stats" in error:
+#                     # print("User disabled public stats")
+#                     print(f"{old_trust} -> {new_trust}", "DPS", "UID:", username)
+#                     message = f"""
+#                     `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)
+#                     """
+#                     # text=message,
+#                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message)  #mrkdwn=True)#, markdown_text=message)
+
+#                 else:
+#                     print(error)
 
 
 asyncio.run(main())
