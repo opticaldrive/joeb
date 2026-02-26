@@ -39,6 +39,7 @@ from pathlib import Path
 
 start_time = time.time()
 
+trust_human = {"0": "blue", "1": "red", "2": "green", "?": "Not Found/Unknown"}
 
 # import aiohappyeyeballs what on earth autoprompt
 async def get_hackatime_user(session, username):
@@ -99,7 +100,6 @@ def get_trust_changes(new_csv_path, old_csv_path):
     return changed
 
 
-trust_human = {"0": "blue", "1": "red", "2": "green", "?": "Not Found/Unknown"}
 
 
 def make_change_message(old_trust, new_trust):
@@ -164,7 +164,7 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         # dynamically calculate max user if 100 not found users are in a row
-        max_user = 25000
+        max_user = 30000
         
         users_data = []
 
@@ -212,16 +212,24 @@ async def main():
 
             users_dict = {user["username"]: user for user in batch_results}
 
-            changed = [
-                {
-                    "username": user,
-                    "old_trust": old_csv_dict[user]["trust_value"],
-                    "new_trust": users_dict[user]["trust_value"],
-                }
-                for user in users_dict
-                if user in old_csv_dict and users_dict[user] != old_csv_dict[user]
-            ]
+            changed = []
+            for user in users_dict:
+                # existing logged user
+                if user in old_csv_dict:
+                    if users_dict[user] != old_csv_dict[user]:
+                        changed.append({
+                            "username": user,
+                            "old_trust": old_csv_dict[user]["trust_value"],
+                            "new_trust": users_dict[user]["trust_value"]
+                        })
+                else: # we want to also include existing lols
+                    changed.append({
+                            "username": user,
+                            "old_trust": old_csv_dict[user]["trust_value"],
+                            "new_trust": users_dict[user]["trust_value"]
+                    })
             print("Changed:", len(changed))
+
             for changed_user in changed:
                 username = changed_user["username"]
                 user_info = await get_hackatime_user(session, username)
@@ -229,47 +237,30 @@ async def main():
                 error = user_info.get("error")
                 old_trust = changed_user["old_trust"]
                 new_trust = changed_user["new_trust"]
+
+                # is the change boring?
+                # eliminate new users to prevent noise
+                if old_trust == "?" and new_trust == "0":
+                    continue
+
                 if error is None:
-                    
-                    change_message = random.choice(
-                        make_change_message(
-                            old_trust, new_trust
-                        ),
-                    )
-                    print(
-                        # (
-                        #     user_info.get("trust_factor", {}).get("trust_value", "?")
-                        #     if user_info.get("trust_factor")
-                        #     else "?"
-                        # ),
-                        f"{old_trust} -> {new_trust}",
-                        user_info["data"]["username"],
-                        user_info["data"]["user_id"],
-                        change_message,
-                        # "HRT: ", # yes
-                        # user_info["data"]["human_readable_total"],
-                        # "HRDA: ",
-                        # user_info["data"]["human_readable_daily_average"],
-                    )
-
-                    message = f"""
-                    `{user_info["data"]["username"]}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
-                    """
-                    # text=message,
-                    slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
-
-                elif  "user has disabled public stats" in error:
-                    # print("User disabled public stats")
-                    print(f"{old_trust} -> {new_trust}", "DPS", "UID:", username)
-            
-                    message = f"""
-                    `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
-                    """
-                    # text=message,
-                    slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
-
+                    textname = user_info["data"]["username"]
+                elif "user has disabled public stats" in error:
+                    textname = "Unknown(disabled public stats)"
                 else:
-                    print(error)
+                    textname = "Unknown(error occurred)"
+
+                message = f"""
+                `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* 
+                """
+                slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
+                print(message)
+                
+                # have we hit batchsize  "unknowns"
+                # before prod change batch size to a smaller number or smt
+                # 25 probably
+
+
 
 
 
@@ -281,64 +272,3 @@ async def main():
     
 
 
-
-#         with open(csv_path, "w", newline="") as list_file:
-#             writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
-#             writer.writeheader()
-#             writer.writerows(users_data)
-
-#         if not_first_run:
-#             print("Not first run, scanning users")
-#             changed = get_trust_changes(csv_path, old_csv_path)
-#             print(len(changed))
-#             for changed_user in changed:
-#                 username = changed_user["username"]
-#                 user_info = await get_hackatime_user(session, username)
-#                 # print(user_info)
-#                 error = user_info.get("error")
-#                 old_trust = changed_user["old_trust"]
-#                 new_trust = changed_user["new_trust"]
-#                 if error is None:
-                    
-#                     change_message = random.choice(
-#                         make_change_message(
-#                             old_trust, new_trust
-#                         ),
-#                     )
-#                     print(
-#                         # (
-#                         #     user_info.get("trust_factor", {}).get("trust_value", "?")
-#                         #     if user_info.get("trust_factor")
-#                         #     else "?"
-#                         # ),
-#                         f"{old_trust} -> {new_trust}",
-#                         user_info["data"]["username"],
-#                         user_info["data"]["user_id"],
-#                         change_message,
-#                         # "HRT: ", # yes
-#                         # user_info["data"]["human_readable_total"],
-#                         # "HRDA: ",
-#                         # user_info["data"]["human_readable_daily_average"],
-#                     )
-
-#                     message = f"""
-#                     `{user_info["data"]["username"]}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* \n>_{change_message}_
-#                     """
-#                     # text=message,
-#                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)#, markdown_text=message)
-
-#                 elif  "user has disabled public stats" in error:
-#                     # print("User disabled public stats")
-#                     print(f"{old_trust} -> {new_trust}", "DPS", "UID:", username)
-#                     message = f"""
-#                     `Unknown(Disabled Public Stats)`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)
-#                     """
-#                     # text=message,
-#                     slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message)  #mrkdwn=True)#, markdown_text=message)
-
-#                 else:
-#                     print(error)
-
-
-asyncio.run(main())
-print("--- %s seconds ---" % (time.time() - start_time))
