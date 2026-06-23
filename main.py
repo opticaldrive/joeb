@@ -229,17 +229,19 @@ async def scanny_all_users(session, semaphore):
 
         for changed_user in changed:
             username = changed_user["username"]
-            user_info = await get_hackatime_user(session, username)
-            # print(user_info)
-            error = user_info.get("error")
             old_trust = changed_user["old_trust"]
             new_trust = changed_user["new_trust"]
 
-            # is the change boring?
-            # eliminate new users to prevent noise
-            if old_trust == "?" and new_trust == "0":
+            # only log meaningful changes. make_change_message returns None for the
+            # boring/noisy ones (?->?, ?->0, etc.), so new not-found users and plain
+            # blue new users get dropped -> we only log red/green outcomes.
+            # gate BEFORE the get_hackatime_user call so we don't waste a request.
+            flavors = [m for m in (make_change_message(old_trust, new_trust) or []) if m]
+            if not flavors:
                 continue
 
+            user_info = await get_hackatime_user(session, username)
+            error = user_info.get("error")
             if error is None:
                 textname = user_info["data"]["username"]
             elif "user has disabled public stats" in error:
@@ -248,7 +250,8 @@ async def scanny_all_users(session, semaphore):
                 textname = "Unknown(error occurred)"
 
             message = f"""
-            `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* 
+            `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)*
+            > {random.choice(flavors)}
             """
             slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
             print(message)
