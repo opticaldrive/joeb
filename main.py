@@ -53,22 +53,38 @@ async def get_hackatime_user(session, username):
 async def get_hackatime_user_trust_factor(session, username):
 
     url = f"https://hackatime.hackclub.com/api/v1/users/{username}/trust_factor"
-    async with session.get(url) as resp:
-        response = await resp.json()
-        return response
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            data = await resp.json()
+            return resp.status, data
+    except Exception:
+        # timeout / connection reset / non-json body (rate limit) -> unknown, not "?"
+        return None, {}
 
 
 async def scan_hackatime_user(session, username):
-    user_trust = await get_hackatime_user_trust_factor(session, username)
+    status, user_trust = await get_hackatime_user_trust_factor(session, username)
 
-    trust_level = user_trust.get("trust_level", "?")
-    trust_value = user_trust.get("trust_value", "?")
-    line = f"{username},{trust_level}\n"
-    print(username, trust_value, trust_level)
+    trust_value = user_trust.get("trust_value")
+    # 200 with a value = real reading. 404 = genuinely no such user ("?").
+    # anything else (429 rate limit / 5xx / timeout) = transient failure: we DON'T
+    # know the value, so flag it (ok=False) and let the caller keep the old one
+    # instead of recording a fake "?" that flaps real users.
+    if status == 200 and trust_value is not None:
+        ok = True
+    elif status == 404:
+        ok = True
+    else:
+        ok = False
+
+    print(username, trust_value, user_trust.get("trust_level", "?"), "ok" if ok else "FAIL")
     return {
-        "username": username,
-        "trust_value": str(user_trust.get("trust_value", "?")),
-    }  # , "trust_level": trust_level}
+        # str so it matches csv-loaded keys (DictReader gives strings); otherwise
+        # int ids never match old_csv_dict and every user looks brand-new (?->x).
+        "username": str(username),
+        "trust_value": str(trust_value) if trust_value is not None else "?",
+        "ok": ok,
+    }
 
 
 def get_trust_changes(new_csv_path, old_csv_path):
@@ -196,6 +212,14 @@ async def scanny_all_users(session, semaphore):
         batch_end = i + batch_size
         tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
         batch_results = await asyncio.gather(*tasks)
+
+        # a transient API failure (rate limit/timeout) gives us no value, so keep the
+        # last known one instead of writing a fake "?" that would flap real users.
+        # also drop the internal "ok" flag so it doesn't leak into the csv.
+        for r in batch_results:
+            if not r.pop("ok", True):
+                prev = old_csv_dict.get(r["username"])
+                r["trust_value"] = prev["trust_value"] if prev else "?"
 
         users_data.extend(batch_results) # do analytics here too, process batch? idk
 
