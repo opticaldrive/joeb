@@ -41,7 +41,7 @@ start_time = time.time()
 
 trust_human = {"0": "blue", "1": "red", "2": "green", "?": "Not Found/Unknown"}
 
-min_interval = 24 * 60 *60 # 24hrs second, 8
+min_interval = 12 * 60 # half hr
 # import aiohappyeyeballs what on earth autoprompt
 async def get_hackatime_user(session, username):
     url = f"https://hackatime.hackclub.com/api/v1/users/{username}/stats"
