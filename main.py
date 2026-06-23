@@ -250,8 +250,7 @@ async def scanny_all_users(session, semaphore):
                 textname = "Unknown(error occurred)"
 
             message = f"""
-            `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)*
-            > {random.choice(flavors)}
+            `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* 
             """
             slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
             print(message)
