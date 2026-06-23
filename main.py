@@ -179,7 +179,7 @@ async def scanny_all_users(session, semaphore):
 
 
     # dynamically calculate max user if 100 not found users are in a row
-    miss_limit = 250
+    miss_limit = 15000 #  THIS IS INTENTIONALLY BIG
     batch_size = 50          # small batches -> smooth pacing
     users_data = []
 
@@ -300,6 +300,7 @@ async def scanny_all_users(session, semaphore):
 
 
 async def main():
+    print("app startup!")
     semaphore = asyncio.Semaphore(1000)  # only 5
     
     while True:
