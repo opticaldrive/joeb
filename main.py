@@ -163,8 +163,8 @@ async def scanny_all_users(session, semaphore):
 
 
     # dynamically calculate max user if 100 not found users are in a row
-    max_user = 30000
-    
+    miss_limit = 250
+    batch_size = 50          # small batches -> smooth pacing
     users_data = []
 
     data_dir = Path(__file__).parent / "data"
@@ -175,37 +175,35 @@ async def scanny_all_users(session, semaphore):
     old_csv_path = data_dir / "old_userslist.csv"  # + csv_path
 
     if os.path.exists(csv_path):
-        shutil.copy(csv_path, old_csv_path)
-        not_first_run = True
-        open(csv_path, "w").close() # nuke the old file, its now in cache file
+        shutil.copy(csv_path, old_csv_path)  # snapshot previous run as baseline
     old_csv_file = open(old_csv_path, "r")
     old_csv = list(csv.DictReader(old_csv_file))
     old_csv_dict = {user["username"]: user for user in old_csv}
 
+    # pace to the minimum rps needed to finish one full scan within min_interval.
+    # last run scanned ids 0..N contiguously, so len(old_csv) ~= ids to scan again.
+    est_ids = max(len(old_csv), 1000)          # first-run fallback if no baseline
+    target_rps = est_ids / min_interval
+    per_batch_secs = batch_size / target_rps   # how long each batch should take
+    print(f"pacing: ~{est_ids} ids, target {target_rps:.3f} rps, {per_batch_secs:.1f}s/batch")
 
-    # batch_csv_path = data_dir / "batch_userslist.csv"
-    # batch_old_csv_path = data_dir / "batch_old_userslist.csv"  # + csv_path 
+    consecutive_misses = 0
+    i = 0
+    done = False
 
-    not_first_run = False
-
-
-    batch_size = 10000
-
-
-    for i in range(0, max_user, batch_size):
-        batch_end = min(i + batch_size, max_user) # yea a bit silly but works
+    while not done:
+        batch_start = time.time()
+        batch_end = i + batch_size
         tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
         batch_results = await asyncio.gather(*tasks)
 
         users_data.extend(batch_results) # do analytics here too, process batch? idk
 
-        csv_exists = os.path.exists(csv_path)
-
-        # save overall list
-
-        with open(csv_path, "a", newline="") as list_file:
+        # save overall list (first batch overwrites + writes header, rest append)
+        mode = "w" if i == 0 else "a"
+        with open(csv_path, mode, newline="") as list_file:
             writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
-            if not csv_exists:
+            if i == 0:
                 writer.writeheader()
             writer.writerows(batch_results)
 
@@ -254,6 +252,22 @@ async def scanny_all_users(session, semaphore):
             """
             slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
             print(message)
+
+        for r in batch_results:
+            if r["trust_value"] == "?":
+                consecutive_misses += 1
+                if consecutive_misses >=miss_limit:
+                    done = True
+                    break
+            else:
+                consecutive_misses = 0   # a real user resets the streak
+
+        i = batch_end
+
+        # pace: sleep the remainder so this batch fills its target time slot
+        if not done:
+            elapsed = time.time() - batch_start
+            await asyncio.sleep(max(0, per_batch_secs - elapsed))
             
          
 
