@@ -41,6 +41,7 @@ start_time = time.time()
 
 trust_human = {"0": "blue", "1": "red", "2": "green", "?": "Not Found/Unknown"}
 
+min_interval = 24 * 60 *60 # 24hrs second, 8
 # import aiohappyeyeballs what on earth autoprompt
 async def get_hackatime_user(session, username):
     url = f"https://hackatime.hackclub.com/api/v1/users/{username}/stats"
@@ -153,122 +154,127 @@ def make_change_message(old_trust, new_trust):
     }
     return trust_changes[old_trust][new_trust]
 
-async def main():
-    semaphore = asyncio.Semaphore(1000)  # only 5
-    
-  
+
+async def scanny_all_users(session, semaphore):
     async def rate_limited_scan(session, username):
         async with semaphore:
             return await scan_hackatime_user(session, username)
 
 
-    async with aiohttp.ClientSession() as session:
-        # dynamically calculate max user if 100 not found users are in a row
-        max_user = 30000
-        
-        users_data = []
 
-        data_dir = Path(__file__).parent / "data"
-        data_dir.mkdir(exist_ok=True)
+    # dynamically calculate max user if 100 not found users are in a row
+    max_user = 30000
+    
+    users_data = []
 
-        
-        csv_path = data_dir / "userslist.csv"
-        old_csv_path = data_dir / "old_userslist.csv"  # + csv_path
+    data_dir = Path(__file__).parent / "data"
+    data_dir.mkdir(exist_ok=True)
 
-        if os.path.exists(csv_path):
-            shutil.copy(csv_path, old_csv_path)
-            not_first_run = True
-            open(csv_path, "w").close() # nuke the old file, its now in cache file
-        old_csv_file = open(old_csv_path, "r")
-        old_csv = list(csv.DictReader(old_csv_file))
-        old_csv_dict = {user["username"]: user for user in old_csv}
+    
+    csv_path = data_dir / "userslist.csv"
+    old_csv_path = data_dir / "old_userslist.csv"  # + csv_path
 
-
-        # batch_csv_path = data_dir / "batch_userslist.csv"
-        # batch_old_csv_path = data_dir / "batch_old_userslist.csv"  # + csv_path 
-
-        not_first_run = False
-
-   
-        batch_size = 10000
+    if os.path.exists(csv_path):
+        shutil.copy(csv_path, old_csv_path)
+        not_first_run = True
+        open(csv_path, "w").close() # nuke the old file, its now in cache file
+    old_csv_file = open(old_csv_path, "r")
+    old_csv = list(csv.DictReader(old_csv_file))
+    old_csv_dict = {user["username"]: user for user in old_csv}
 
 
-        for i in range(0, max_user, batch_size):
-            batch_end = min(i + batch_size, max_user) # yea a bit silly but works
-            tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
-            batch_results = await asyncio.gather(*tasks)
+    # batch_csv_path = data_dir / "batch_userslist.csv"
+    # batch_old_csv_path = data_dir / "batch_old_userslist.csv"  # + csv_path 
 
-            users_data.extend(batch_results) # do analytics here too, process batch? idk
+    not_first_run = False
 
-            csv_exists = os.path.exists(csv_path)
 
-            # save overall list
+    batch_size = 10000
 
-            with open(csv_path, "a", newline="") as list_file:
-                writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
-                if not csv_exists:
-                    writer.writeheader()
-                writer.writerows(batch_results)
 
-            users_dict = {user["username"]: user for user in batch_results}
+    for i in range(0, max_user, batch_size):
+        batch_end = min(i + batch_size, max_user) # yea a bit silly but works
+        tasks = [rate_limited_scan(session, user_id) for user_id in range(i, batch_end)]
+        batch_results = await asyncio.gather(*tasks)
 
-            changed = []
-            for user in users_dict:
-                # existing logged user
-                if user in old_csv_dict:
-                    if users_dict[user] != old_csv_dict[user]:
-                        changed.append({
-                            "username": user,
-                            "old_trust": old_csv_dict[user]["trust_value"],
-                            "new_trust": users_dict[user]["trust_value"]
-                        })
-                else: # we want to also include existing lols
+        users_data.extend(batch_results) # do analytics here too, process batch? idk
+
+        csv_exists = os.path.exists(csv_path)
+
+        # save overall list
+
+        with open(csv_path, "a", newline="") as list_file:
+            writer = csv.DictWriter(list_file, fieldnames=["username", "trust_value"])
+            if not csv_exists:
+                writer.writeheader()
+            writer.writerows(batch_results)
+
+        users_dict = {user["username"]: user for user in batch_results}
+
+        changed = []
+        for user in users_dict:
+            # existing logged user
+            if user in old_csv_dict:
+                if users_dict[user] != old_csv_dict[user]:
                     changed.append({
-                            "username": user,
-                            "old_trust": old_csv_dict[user]["trust_value"],
-                            "new_trust": users_dict[user]["trust_value"]
+                        "username": user,
+                        "old_trust": old_csv_dict[user]["trust_value"],
+                        "new_trust": users_dict[user]["trust_value"]
                     })
-            print("Changed:", len(changed))
+            else: # we want to also include existing lols
+                changed.append({
+                        "username": user,
+                        "old_trust":"?",
+                        "new_trust": users_dict[user]["trust_value"]
+                })
+        print("Changed:", len(changed))
 
-            for changed_user in changed:
-                username = changed_user["username"]
-                user_info = await get_hackatime_user(session, username)
-                # print(user_info)
-                error = user_info.get("error")
-                old_trust = changed_user["old_trust"]
-                new_trust = changed_user["new_trust"]
+        for changed_user in changed:
+            username = changed_user["username"]
+            user_info = await get_hackatime_user(session, username)
+            # print(user_info)
+            error = user_info.get("error")
+            old_trust = changed_user["old_trust"]
+            new_trust = changed_user["new_trust"]
 
-                # is the change boring?
-                # eliminate new users to prevent noise
-                if old_trust == "?" and new_trust == "0":
-                    continue
+            # is the change boring?
+            # eliminate new users to prevent noise
+            if old_trust == "?" and new_trust == "0":
+                continue
 
-                if error is None:
-                    textname = user_info["data"]["username"]
-                elif "user has disabled public stats" in error:
-                    textname = "Unknown(disabled public stats)"
-                else:
-                    textname = "Unknown(error occurred)"
+            if error is None:
+                textname = user_info["data"]["username"]
+            elif "user has disabled public stats" in error:
+                textname = "Unknown(disabled public stats)"
+            else:
+                textname = "Unknown(error occurred)"
 
-                message = f"""
-                `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* 
-                """
-                slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
-                print(message)
-                
-                # have we hit batchsize  "unknowns"
-                # before prod change batch size to a smaller number or smt
-                # 25 probably
+            message = f"""
+            `{textname}`(`{username}`) had a trust level change! \n*{trust_human[old_trust]}(`{old_trust}`) -> {trust_human[new_trust]}(`{new_trust}`)* 
+            """
+            slackbot.client.chat_postMessage(channel=LOG_CHANNEL, text = message,  mrkdwn=True)
+            print(message)
+            
+         
 
 
 
+async def main():
+    semaphore = asyncio.Semaphore(1000)  # only 5
+    
+    while True:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=SSL_CTX)) as session:
+            start = time.time()
+            try:
+                await scanny_all_users(session, semaphore)
+            except Exception as e:
+                print("scan failed:", repr(e))   # don't let one run kill the daemon
+            elapsed = time.time() - start
+            sleep_for = max(0, min_interval - elapsed)
+            print(f"scan took {elapsed:.0f}s, sleeping {sleep_for:.0f}s")
+            await asyncio.sleep(sleep_for)
 
-
-
-            # await asyncio.sleep(0.5)  # bweeep
-        # print(len(users_data))
-
-        # silly path
     
 
 
+asyncio.run(main())
